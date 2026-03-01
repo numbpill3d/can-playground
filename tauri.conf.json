@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0",
+  "productName": "CAN Frame Playground",
+  "identifier": "com.canframe.playground",
+  "version": "0.1.0",
+  "build": {
+    "frontendDist": "./src",
+    "devUrl": "http://localhost:1420"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "identifier": "com.canframe.playground",
+    "icon": [
+      "src-tauri/icons/icon.png",
+      "src-tauri/icons/icon.ico",
+      "src-tauri/icons/icon.icns"
+    ],
+    "resources": [],
+    "externalBin": [],
+    "copyright": "",
+    "category": "DeveloperTool",
+    "shortDescription": "",
+    "longDescription": ""
+  },
+  "plugins": {},
+  "app": {
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "CAN Frame Playground",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "minWidth": 800,
+        "minHeight": 600
+      }
+    ]
+  }
+}
