@@ -2,7 +2,7 @@
 
 A desktop version of the CAN Frame Playground tool built with Tauri for cross-platform deployment. This application allows you to parse, visualize, and analyze CAN bus logs with a native desktop experience.
 
-## 🚀 Features
+## Features
 
 - **Parse CAN bus logs** with syntax highlighting and validation
 - **Visualize hex dumps** with delta change detection and highlighting
@@ -13,7 +13,7 @@ A desktop version of the CAN Frame Playground tool built with Tauri for cross-pl
 - **Privacy-focused** - All processing happens locally, no data leaves your machine
 - **Cross-platform** - Works on Windows, macOS, and Linux
 
-## 🛠️ Prerequisites
+## Prerequisites
 
 Before building the application, ensure you have the following installed:
 
@@ -24,7 +24,7 @@ Before building the application, ensure you have the following installed:
   - **Windows**: WebView2 runtime (automatically installed)
   - **macOS**: No additional dependencies needed
 
-## 📦 Installation & Development
+## Installation & Development
 
 ### Clone and Setup
 ```bash
@@ -51,7 +51,7 @@ cargo tauri build
 
 This will create platform-specific bundles in `target/release/bundle/`.
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 can-playground/
@@ -83,7 +83,7 @@ can-playground/
 - **CSP**: Disabled to allow CDN resources (Chart.js, PapaParse)
 - **External Resources**: CDN-hosted Chart.js and PapaParse for visualization
 
-## 📋 Usage Guide
+## Usage Guide
 
 ### Loading CAN Logs
 1. Copy your CAN log data (supports candump format)
@@ -103,7 +103,7 @@ can-playground/
 - **Delta from Previous**: Highlights bytes that changed from the previous frame
 - **Relative to Baseline**: Highlights differences from a baseline frame
 
-## 🔧 Customization
+## Customization
 
 ### Adding Custom Icons
 Replace the placeholder icons in `src-tauri/icons/` with your custom icons:
@@ -120,7 +120,7 @@ All UI changes can be made in the files under the `src/` directory:
 ### Adding New Features
 To add new features, you can extend the JavaScript functionality in `script.js` or add new Rust commands in `src-tauri/src/main.rs`.
 
-## 📦 Distribution
+## Distribution
 
 The built application bundles will be located in `target/release/bundle/`:
 
@@ -136,7 +136,7 @@ The built application bundles will be located in `target/release/bundle/`:
   - `target/release/bundle/deb/can-frame-playground_x.x.x_amd64.deb`
   - `target/release/bundle/appimage/can-frame-playground_x.x.x_amd64.AppImage`
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -156,7 +156,7 @@ The built application bundles will be located in `target/release/bundle/`:
 
 Run `cargo tauri info` to get detailed system information for troubleshooting.
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -165,11 +165,11 @@ Run `cargo tauri info` to get detailed system information for troubleshooting.
 5. Push to the branch (`git push origin feature/amazing-feature`)
 6. Open a Pull Request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🛠️ Technologies Used
+## Technologies Used
 
 - **[Tauri](https://tauri.app/)**: Framework for building desktop apps with web technologies
 - **[Rust](https://www.rust-lang.org/)**: Backend language for system-level operations
@@ -177,10 +177,11 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **[Chart.js](https://www.chartjs.org/)**: For plotting delta graphs
 - **[PapaParse](https://www.papaparse.com/)**: For CSV parsing
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Thanks to the Tauri team for creating an excellent framework for desktop applications
 - The CAN bus community for their continued work in automotive communication protocols
+- Zenotrek for getting me interested in car hacking/reverse engingeering in the first place
 
 ---
 
