@@ -71,7 +71,7 @@ can-playground/
 └── README.md               # This file
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 ### Window Settings
 - **Title**: "CAN Frame Playground"
