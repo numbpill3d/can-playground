@@ -10,7 +10,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "identifier": "com.canframe.playground",
     "icon": [
       "src-tauri/icons/icon.png",
       "src-tauri/icons/icon.ico",

@@ -21,6 +21,11 @@ src-tauri/tauri-bundle/
 .env
 .env.local
 
+# Build artifacts
+gen/
+Cargo.lock
+package-lock.json
+
 # Logs
 *.log
 

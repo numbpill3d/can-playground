@@ -1,4 +1,3 @@
-use tauri::Manager;
 
 fn main() {
     tauri::Builder::default()
