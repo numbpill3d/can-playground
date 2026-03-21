@@ -13,11 +13,23 @@
         <header class="header">
             <h1>CAN Frame Playground</h1>
             <div class="controls">
-                <button id="dbcImportBtn" class="btn btn-secondary" title="Import DBC file to auto-annotate signals">Import DBC</button>
-                <input type="file" id="dbcFileInput" accept=".dbc" style="display:none">
-                <button id="clearBtn" class="btn btn-secondary">Clear</button>
-                <button id="exportBtn" class="btn btn-primary">Export Annotations</button>
-                <button id="darkModeToggle" class="btn btn-secondary">Dark Mode</button>
+                <div class="ctrl-group">
+                    <button id="dbcImportBtn" class="btn btn-secondary">Import DBC</button>
+                    <input type="file" id="dbcFileInput" accept=".dbc" style="display:none">
+                </div>
+                <div class="ctrl-group">
+                    <button id="saveSessionBtn" class="btn btn-secondary" title="Save session (frames + annotations) to file">Save Session</button>
+                    <button id="loadSessionBtn" class="btn btn-secondary" title="Load a saved session file">Load Session</button>
+                    <input type="file" id="sessionFileInput" accept=".json" style="display:none">
+                </div>
+                <div class="ctrl-group">
+                    <button id="exportBtn" class="btn btn-secondary">Export Annotations</button>
+                    <button id="exportCsvBtn" class="btn btn-secondary" title="Export decoded signal values as CSV">Export CSV</button>
+                </div>
+                <div class="ctrl-group">
+                    <button id="clearBtn" class="btn btn-secondary">Clear</button>
+                    <button id="darkModeToggle" class="btn btn-secondary">Dark Mode</button>
+                </div>
             </div>
         </header>
 
@@ -27,9 +39,14 @@
             <section class="input-section">
                 <div class="input-header">
                     <h2>Input CAN Log</h2>
-                    <button id="parseBtn" class="btn btn-primary">Parse Log</button>
+                    <div class="input-actions">
+                        <button id="openFileBtn" class="btn btn-secondary" title="Open a log file">Open File</button>
+                        <input type="file" id="logFileInput" accept=".log,.txt,.asc,*" style="display:none">
+                        <button id="parseBtn" class="btn btn-primary">Parse Log</button>
+                    </div>
                 </div>
-                <textarea id="logInput" placeholder="Paste your CAN log here (candump format)&#10;&#10;(1720000000.123456) can0 123#AABBCCDDEEFF0011&#10;(1720000001.234567) can0 123#AABBCCDDEEFF0022"></textarea>
+                <textarea id="logInput"
+                    placeholder="Paste CAN log here, or drag-and-drop a file onto this area&#10;&#10;Supported formats:&#10;  (1720000000.123456) can0 123#AABBCCDDEEFF0011&#10;  123#AABBCCDDEEFF0011"></textarea>
                 <div class="status-bar">
                     <span id="statusMessage">Ready to parse</span>
                     <span id="parseStats"></span>
@@ -43,7 +60,7 @@
                     <input type="text" id="idFilter" placeholder="Filter IDs...">
                 </div>
                 <div id="idList" class="id-list">
-                    <p class="empty-message">No data loaded. Paste CAN log and click Parse.</p>
+                    <p class="empty-message">No data loaded.</p>
                 </div>
             </aside>
 
@@ -57,7 +74,7 @@
                     <button class="tab-btn" data-tab="annotations">Annotations</button>
                 </div>
 
-                <!-- ── Hex Dump Tab ── -->
+                <!-- Hex Dump Tab -->
                 <div class="tab-content active" id="hexTab">
                     <div class="hex-view-header">
                         <h3 id="selectedIdTitle">Select a CAN ID</h3>
@@ -71,20 +88,22 @@
                         </div>
                     </div>
                     <div class="hex-filter-bar">
-                        <input type="text" id="frameFilter" placeholder="Filter: B0>0x80   B2==0xFF   B1!=0x00   (space-separated, && supported)">
+                        <input type="text" id="frameFilter"
+                            placeholder="Filter: B0>0x80   B2==0xFF   B1!=0x00   (space or && separated)">
                         <span id="filterCount" class="filter-count"></span>
-                        <button id="clearFilterBtn" class="btn-icon" title="Clear filter">✕</button>
+                        <button id="clearFilterBtn" class="btn-icon">✕</button>
                     </div>
                     <div id="hexDumpContainer" class="hex-dump-container">
                         <p class="empty-message">Select a CAN ID to view hex dump</p>
                     </div>
                 </div>
 
-                <!-- ── Graph Tab ── -->
+                <!-- Graph Tab -->
                 <div class="tab-content" id="graphTab">
                     <div class="graph-toolbar">
                         <select id="graphChartType" class="toolbar-select">
                             <option value="values">Byte Values</option>
+                            <option value="signals">Decoded Signals</option>
                             <option value="rate">Message Rate</option>
                         </select>
                         <label class="toolbar-option">
@@ -104,7 +123,7 @@
                     </div>
                 </div>
 
-                <!-- ── Bit Map Tab ── -->
+                <!-- Bit Map Tab -->
                 <div class="tab-content" id="bitmapTab">
                     <div class="bitmap-toolbar">
                         <div class="bitmap-legend">
@@ -119,14 +138,14 @@
                     </div>
                 </div>
 
-                <!-- ── Stats Tab ── -->
+                <!-- Stats Tab -->
                 <div class="tab-content" id="statsTab">
                     <div id="statsContainer" class="stats-container">
                         <p class="empty-message">Select a CAN ID to view statistics</p>
                     </div>
                 </div>
 
-                <!-- ── Annotations Tab ── -->
+                <!-- Annotations Tab -->
                 <div class="tab-content" id="annotationsTab">
                     <div class="annotation-editor">
                         <h3>Signal Annotations</h3>
@@ -144,12 +163,12 @@
                                     <div class="form-group">
                                         <label for="signalByteOrder">Byte Order:</label>
                                         <select id="signalByteOrder">
-                                            <option value="intel">Intel (little-endian)</option>
-                                            <option value="motorola">Motorola (big-endian)</option>
+                                            <option value="intel">Intel (LE)</option>
+                                            <option value="motorola">Motorola (BE)</option>
                                         </select>
                                     </div>
                                     <div class="form-group">
-                                        <label for="signalType">Data Type:</label>
+                                        <label for="signalType">Type:</label>
                                         <select id="signalType">
                                             <option value="unsigned">Unsigned</option>
                                             <option value="signed">Signed</option>
@@ -166,7 +185,7 @@
                                         <input type="number" id="signalLength" min="1" required>
                                     </div>
                                     <div class="form-group">
-                                        <label for="signalFactor">Scale Factor:</label>
+                                        <label for="signalFactor">Scale:</label>
                                         <input type="number" id="signalFactor" step="any" value="1">
                                     </div>
                                     <div class="form-group">
@@ -186,10 +205,9 @@
             </main>
         </div>
 
-        <!-- Footer -->
         <footer class="footer">
             <div class="footer-content">
-                <span>All processing is local — no data leaves your browser</span>
+                <span>All processing is local — no data leaves your machine</span>
                 <span id="frameCount">Frames: 0 | IDs: 0</span>
             </div>
         </footer>

@@ -11,6 +11,12 @@ let annotations = new Map();
 let graphOverlayIds = new Set();
 let contextMenuFrame = null;
 
+// virtual scroll state
+let vs = null;       // { frames, allFrames, origIdxs, t0, maxLen, hlType, baseFrame, coverage }
+let vsPending = false;
+const VS_ROW_H = 38;
+const VS_BUFFER = 8;
+
 const COLOR_PALETTE = [
     [255, 99, 132], [54, 162, 235], [255, 205, 86], [75, 192, 192],
     [153, 102, 255], [255, 159, 64], [99, 255, 132], [235, 54, 162]
@@ -51,6 +57,12 @@ const idOverlayPanel = document.getElementById('idOverlayPanel');
 const contextMenu    = document.getElementById('contextMenu');
 const statsContainer = document.getElementById('statsContainer');
 const bitmapInfo     = document.getElementById('bitmapInfo');
+const openFileBtn    = document.getElementById('openFileBtn');
+const logFileInput   = document.getElementById('logFileInput');
+const saveSessionBtn = document.getElementById('saveSessionBtn');
+const loadSessionBtn = document.getElementById('loadSessionBtn');
+const sessionFileInput = document.getElementById('sessionFileInput');
+const exportCsvBtn   = document.getElementById('exportCsvBtn');
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -75,6 +87,28 @@ function setupEventListeners() {
     dbcFileInput.addEventListener('change', handleDBCImport);
     annotationForm.addEventListener('submit', addAnnotation);
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', switchTab));
+
+    // File open
+    openFileBtn.addEventListener('click', () => logFileInput.click());
+    logFileInput.addEventListener('change', e => { if (e.target.files[0]) openLogFile(e.target.files[0]); e.target.value = ''; });
+
+    // Drag-drop on textarea
+    logInput.addEventListener('dragover',  e => { e.preventDefault(); logInput.classList.add('drag-over'); });
+    logInput.addEventListener('dragleave', () => logInput.classList.remove('drag-over'));
+    logInput.addEventListener('drop', e => {
+        e.preventDefault();
+        logInput.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file) openLogFile(file);
+    });
+
+    // Session save/load
+    saveSessionBtn.addEventListener('click', saveSession);
+    loadSessionBtn.addEventListener('click', () => sessionFileInput.click());
+    sessionFileInput.addEventListener('change', e => { if (e.target.files[0]) loadSession(e.target.files[0]); e.target.value = ''; });
+
+    // Export CSV
+    exportCsvBtn.addEventListener('click', exportDecodedCSV);
 
     // Context menu
     document.addEventListener('click', () => { contextMenu.style.display = 'none'; });
@@ -101,9 +135,10 @@ function parseLog() {
     const lines = input.split('\n').filter(l => l.trim());
     let parsed = 0, errors = 0;
 
-    for (const line of lines) {
+    for (let li = 0; li < lines.length; li++) {
+        const line = lines[li];
         try {
-            const frame = parseLine(line.trim());
+            const frame = parseLine(line.trim(), li);
             if (frame) {
                 canFrames.push(frame);
                 parsed++;
@@ -121,13 +156,13 @@ function parseLog() {
     if (canGroups.size > 0) selectCanId(Array.from(canGroups.keys())[0]);
 }
 
-function parseLine(line) {
+function parseLine(line, idx = 0) {
     // candump: (ts) iface ID#payload
     const m1 = line.match(/^\((\d+\.\d+)\)\s+\w+\s+([0-9A-Fa-f]+)#([0-9A-Fa-f]*)$/);
     if (m1) return buildFrame(m1[2].toUpperCase(), parseFloat(m1[1]), m1[3]);
-    // simple: ID#payload
+    // simple: ID#payload — use sequential synthetic timestamps
     const m2 = line.match(/^([0-9A-Fa-f]+)#([0-9A-Fa-f]*)$/);
-    if (m2) return buildFrame(m2[1].toUpperCase(), Date.now() / 1000, m2[2]);
+    if (m2) return buildFrame(m2[1].toUpperCase(), idx * 0.001, m2[2]);
     throw new Error('no match');
 }
 
@@ -261,6 +296,8 @@ function buildByteCoverage(id) {
 function renderHexDump() {
     if (!selectedId || !canGroups.has(selectedId)) {
         hexDumpContainer.innerHTML = '<p class="empty-message">Select a CAN ID to view hex dump</p>';
+        hexDumpContainer.onscroll = null;
+        vs = null;
         return;
     }
 
@@ -277,92 +314,79 @@ function renderHexDump() {
 
     if (!frames.length) {
         hexDumpContainer.innerHTML = '<p class="empty-message">No frames match the filter</p>';
+        hexDumpContainer.onscroll = null;
+        vs = null;
         return;
     }
 
-    const maxLen = Math.max(...frames.map(f => f.payload.length));
-    const hlType = highlightMode.value;
+    const maxLen    = Math.max(...frames.map(f => f.payload.length));
+    const hlType    = highlightMode.value;
     const baseFrame = allFrames[0];
-    const coverage = buildByteCoverage(selectedId);
+    const coverage  = buildByteCoverage(selectedId);
+    const origIdxs  = frames.map(f => allFrames.indexOf(f));
+    const colCount  = maxLen + 2;
 
-    let html = '<table class="hex-table"><thead><tr>';
-    html += '<th class="col-idx">#</th><th class="col-time">t (s)</th>';
+    vs = { frames, allFrames, origIdxs, t0: allFrames[0].timestamp, maxLen, hlType, baseFrame, coverage };
+
+    // Build thead
+    let thead = '<tr><th class="col-idx">#</th><th class="col-time">t (s)</th>';
     for (let j = 0; j < maxLen; j++) {
-        const cov = coverage[j];
+        const cov    = coverage[j];
         const badges = cov
-            ? cov.map(c => `<span class="sig-badge" style="background:${getColor(c.idx, 0.75)}">${c.name}</span>`).join('')
+            ? cov.map(c => `<span class="sig-badge" style="background:${getColor(c.idx,0.75)}">${c.name}</span>`).join('')
             : '';
-        html += `<th class="col-byte">${badges}<span>B${j}</span></th>`;
+        thead += `<th class="col-byte">${badges}<span>B${j}</span></th>`;
     }
-    html += '</tr></thead><tbody>';
+    thead += '</tr>';
 
-    for (let i = 0; i < frames.length; i++) {
-        const frame = frames[i];
-        const origIdx = allFrames.indexOf(frame);
-        const rel = (frame.timestamp - allFrames[0].timestamp).toFixed(3);
-        html += `<tr class="hex-row" data-frame-idx="${origIdx}">`;
-        html += `<td class="col-idx">${origIdx}</td>`;
-        html += `<td class="col-time">${rel}</td>`;
+    hexDumpContainer.innerHTML = `<table class="hex-table">
+        <thead>${thead}</thead>
+        <tbody>
+            <tr id="vsTop" class="vs-spacer"><td colspan="${colCount}"></td></tr>
+            <tr id="vsBot" class="vs-spacer"><td colspan="${colCount}"></td></tr>
+        </tbody>
+    </table>`;
 
-        for (let j = 0; j < maxLen; j++) {
-            const v = j < frame.payload.length ? frame.payload[j] : null;
-            if (v === null) { html += `<td class="byte-cell byte-missing">--</td>`; continue; }
+    hexDumpContainer.scrollTop = 0;
+    hexDumpContainer.onscroll = vsOnScroll;
+    requestAnimationFrame(vsUpdate);
+}
 
-            const hex = v.toString(16).toUpperCase().padStart(2, '0');
-            const bin = v.toString(2).padStart(8, '0');
-            let cellClass = 'byte-cell';
-            let deltaInd = '';
-            let tooltipDelta = '';
-
-            // Signal coverage indicator
-            const cov = coverage[j];
-            const sigBorder = cov ? `style="border-bottom: 3px solid ${getColor(cov[0].idx, 0.9)}"` : '';
-
-            // Change highlight
-            if (hlType !== 'none') {
-                const refFrame = hlType === 'baseline' ? baseFrame : (i > 0 ? frames[i-1] : null);
-                if (refFrame && j < refFrame.payload.length) {
-                    const rv = refFrame.payload[j];
-                    if (rv !== v) {
-                        const diff = v - rv;
-                        deltaInd = diff > 0
-                            ? ' <span class="delta-up">▲</span>'
-                            : ' <span class="delta-down">▼</span>';
-                        const ref = `0x${rv.toString(16).toUpperCase().padStart(2,'0')}`;
-                        tooltipDelta = `Δ ${diff > 0 ? '+' : ''}${diff} from ${hlType === 'baseline' ? 'baseline' : 'prev'} (${ref})`;
-                        const abs = Math.abs(diff);
-                        if (abs > 200) cellClass += ' changed-heavy';
-                        else if (abs > 50) cellClass += ' changed-medium';
-                        else cellClass += ' changed-light';
-                    }
-                }
-            }
-
-            const sigLabel = cov ? `<div class="tt-signal">Signal: ${cov.map(c => c.name).join(', ')}</div>` : '';
-            const tooltip = `
-                <div class="tt-title">B${j} · frame ${origIdx}</div>
-                <div class="tt-row"><span>Hex</span><span>0x${hex}</span></div>
-                <div class="tt-row"><span>Dec</span><span>${v}</span></div>
-                <div class="tt-row"><span>Bin</span><span>${bin.slice(0,4)} ${bin.slice(4)}</span></div>
-                ${tooltipDelta ? `<div class="tt-delta">${tooltipDelta}</div>` : ''}
-                ${sigLabel}`;
-
-            html += `<td class="${cellClass}" ${sigBorder}>
-                <div class="cell-inner">
-                    <span class="cell-hex">0x${hex}${deltaInd}</span>
-                    <span class="cell-dec">${v}</span>
-                </div>
-                <div class="cell-tooltip">${tooltip}</div>
-            </td>`;
-        }
-        html += '</tr>';
+function vsOnScroll() {
+    if (!vsPending) {
+        vsPending = true;
+        requestAnimationFrame(() => { vsPending = false; vsUpdate(); });
     }
+}
 
-    html += '</tbody></table>';
-    hexDumpContainer.innerHTML = html;
+function vsUpdate() {
+    if (!vs) return;
+    const { frames, allFrames, origIdxs, t0, maxLen, hlType, baseFrame, coverage } = vs;
 
-    // Attach right-click context menu
-    hexDumpContainer.querySelectorAll('.hex-row').forEach(row => {
+    const scrollTop = hexDumpContainer.scrollTop;
+    const viewH     = hexDumpContainer.clientHeight;
+    const firstVis  = Math.max(0, Math.floor(scrollTop / VS_ROW_H) - VS_BUFFER);
+    const lastVis   = Math.min(frames.length - 1, Math.ceil((scrollTop + viewH) / VS_ROW_H) + VS_BUFFER);
+
+    const topEl = document.getElementById('vsTop');
+    const botEl = document.getElementById('vsBot');
+    if (!topEl || !botEl) return;
+
+    topEl.firstElementChild.style.height = (firstVis * VS_ROW_H) + 'px';
+    botEl.firstElementChild.style.height = (Math.max(0, frames.length - 1 - lastVis) * VS_ROW_H) + 'px';
+
+    // Remove current data rows
+    topEl.parentElement.querySelectorAll('.hex-row').forEach(r => r.remove());
+
+    // Insert new rows before vsBot
+    let rowsHtml = '';
+    for (let i = firstVis; i <= lastVis; i++) {
+        rowsHtml += buildRowHtml(frames[i], origIdxs[i], i, t0, maxLen, hlType, baseFrame, coverage, frames);
+    }
+    botEl.insertAdjacentHTML('beforebegin', rowsHtml);
+
+    // Context menu handlers
+    topEl.parentElement.querySelectorAll('.hex-row').forEach(row => {
         row.addEventListener('contextmenu', e => {
             e.preventDefault();
             contextMenuFrame = allFrames[parseInt(row.dataset.frameIdx)];
@@ -371,6 +395,63 @@ function renderHexDump() {
             contextMenu.style.top  = `${e.pageY}px`;
         });
     });
+}
+
+function buildRowHtml(frame, origIdx, frameIdx, t0, maxLen, hlType, baseFrame, coverage, displayedFrames) {
+    const rel = (frame.timestamp - t0).toFixed(3);
+    let html = `<tr class="hex-row" data-frame-idx="${origIdx}">`;
+    html += `<td class="col-idx">${origIdx}</td>`;
+    html += `<td class="col-time">${rel}</td>`;
+
+    for (let j = 0; j < maxLen; j++) {
+        const v = j < frame.payload.length ? frame.payload[j] : null;
+        if (v === null) { html += `<td class="byte-cell byte-missing">--</td>`; continue; }
+
+        const hex = v.toString(16).toUpperCase().padStart(2, '0');
+        const bin = v.toString(2).padStart(8, '0');
+        let cellClass = 'byte-cell';
+        let deltaInd = '';
+        let tooltipDelta = '';
+
+        const cov = coverage[j];
+        const sigBorder = cov ? `style="border-bottom: 3px solid ${getColor(cov[0].idx, 0.9)}"` : '';
+
+        if (hlType !== 'none') {
+            const refFrame = hlType === 'baseline' ? baseFrame : (frameIdx > 0 ? displayedFrames[frameIdx - 1] : null);
+            if (refFrame && j < refFrame.payload.length) {
+                const rv = refFrame.payload[j];
+                if (rv !== v) {
+                    const diff = v - rv;
+                    deltaInd = diff > 0 ? ' <span class="delta-up">▲</span>' : ' <span class="delta-down">▼</span>';
+                    const ref = `0x${rv.toString(16).toUpperCase().padStart(2,'0')}`;
+                    tooltipDelta = `Δ ${diff > 0 ? '+' : ''}${diff} from ${hlType === 'baseline' ? 'baseline' : 'prev'} (${ref})`;
+                    const abs = Math.abs(diff);
+                    if (abs > 200) cellClass += ' changed-heavy';
+                    else if (abs > 50) cellClass += ' changed-medium';
+                    else cellClass += ' changed-light';
+                }
+            }
+        }
+
+        const sigLabel = cov ? `<div class="tt-signal">Signal: ${cov.map(c => c.name).join(', ')}</div>` : '';
+        const tooltip = `
+            <div class="tt-title">B${j} · frame ${origIdx}</div>
+            <div class="tt-row"><span>Hex</span><span>0x${hex}</span></div>
+            <div class="tt-row"><span>Dec</span><span>${v}</span></div>
+            <div class="tt-row"><span>Bin</span><span>${bin.slice(0,4)} ${bin.slice(4)}</span></div>
+            ${tooltipDelta ? `<div class="tt-delta">${tooltipDelta}</div>` : ''}
+            ${sigLabel}`;
+
+        html += `<td class="${cellClass}" ${sigBorder}>
+            <div class="cell-inner">
+                <span class="cell-hex">0x${hex}${deltaInd}</span>
+                <span class="cell-dec">${v}</span>
+            </div>
+            <div class="cell-tooltip">${tooltip}</div>
+        </td>`;
+    }
+    html += '</tr>';
+    return html;
 }
 
 // ── Graph ─────────────────────────────────────────────────────────────────────
@@ -433,6 +514,25 @@ function renderGraph() {
                 backgroundColor: getColor(activeIds.indexOf(id), 0.1),
                 borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0, spanGaps: true
             });
+        } else if (chartType === 'signals') {
+            const anns = annotations.get(id) || [];
+            if (!anns.length && !multiId) {
+                graphInfo.textContent = 'No signals defined — add annotations first';
+            }
+            for (let ai = 0; ai < anns.length; ai++) {
+                const ann = anns[ai];
+                const values = frames.map(f => decodeSignal(ann, f.payload));
+                datasets.push({
+                    label: multiId ? `${id} ${ann.name}` : ann.name,
+                    data: values,
+                    borderColor: getColor(idColorBase + ai),
+                    backgroundColor: getColor(idColorBase + ai, 0.07),
+                    borderWidth: 1.5,
+                    pointRadius: frames.length > 200 ? 0 : 2,
+                    pointHoverRadius: 4,
+                    fill: false, tension: 0, spanGaps: true
+                });
+            }
         } else {
             const maxBytes = Math.max(...frames.map(f => f.payload.length));
             for (let j = 0; j < maxBytes; j++) {
@@ -492,6 +592,7 @@ function renderGraph() {
                             const v = ctx.parsed.y;
                             if (v === null) return null;
                             if (chartType === 'rate') return ` ${ctx.dataset.label}: ${v.toFixed(3)} ms`;
+                            if (chartType === 'signals') return ` ${ctx.dataset.label}: ${Number.isInteger(v) ? v : v.toFixed(4)}`;
                             if (isDelta) return ` ${ctx.dataset.label}: ${v >= 0 ? '+' : ''}${v}`;
                             return ` ${ctx.dataset.label}: 0x${v.toString(16).toUpperCase().padStart(2,'0')} (${v})`;
                         }
@@ -504,14 +605,14 @@ function renderGraph() {
                     ticks: { maxTicksLimit: 12, maxRotation: 0 }
                 },
                 y: {
-                    min: (chartType === 'rate' || isDelta) ? undefined : 0,
-                    max: (chartType === 'rate' || isDelta) ? undefined : 255,
+                    min: (chartType === 'rate' || isDelta || chartType === 'signals') ? undefined : 0,
+                    max: (chartType === 'rate' || isDelta || chartType === 'signals') ? undefined : 255,
                     title: {
                         display: true,
-                        text: chartType === 'rate' ? 'Interval (ms)' : isDelta ? 'Delta' : 'Byte value'
+                        text: chartType === 'rate' ? 'Interval (ms)' : chartType === 'signals' ? 'Signal value' : isDelta ? 'Delta' : 'Byte value'
                     },
                     ticks: {
-                        callback: v => (chartType !== 'rate' && !isDelta)
+                        callback: v => (chartType !== 'rate' && chartType !== 'signals' && !isDelta)
                             ? `0x${Math.round(v).toString(16).toUpperCase().padStart(2,'0')}` : v
                     }
                 }
@@ -898,9 +999,11 @@ function copyFrameAs(frame, format) {
 function clearAll() {
     canFrames = []; canGroups.clear(); fieldAnalysisMap.clear();
     annotations.clear(); graphOverlayIds.clear(); selectedId = null;
+    vs = null;
     logInput.value = '';
     idList.innerHTML = '<p class="empty-message">No data loaded. Paste CAN log and click Parse.</p>';
     hexDumpContainer.innerHTML = '<p class="empty-message">Select a CAN ID to view hex dump</p>';
+    hexDumpContainer.onscroll = null;
     selectedIdTitle.textContent = 'Select a CAN ID';
     annotationList.innerHTML = '<p class="empty-message">No annotations for selected ID</p>';
     statsContainer.innerHTML = '<p class="empty-message">Select a CAN ID to view statistics</p>';
@@ -956,4 +1059,95 @@ function showMessage(msg, type = 'info') {
     setTimeout(() => {
         if (statusMessage.textContent === msg) { statusMessage.textContent = 'Ready'; statusMessage.className = ''; }
     }, 3000);
+}
+
+// ── File Open ─────────────────────────────────────────────────────────────────
+function openLogFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        logInput.value = e.target.result;
+        parseLog();
+        showMessage(`Loaded: ${file.name}`, 'success');
+    };
+    reader.readAsText(file);
+}
+
+// ── Session Save / Load ───────────────────────────────────────────────────────
+function saveSession() {
+    if (!canGroups.size) { showMessage('No data to save', 'error'); return; }
+    const session = {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        log: logInput.value,
+        annotations: Object.fromEntries(annotations)
+    };
+    const a = document.createElement('a');
+    a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(session, null, 2));
+    a.download = `can-session-${Date.now()}.json`;
+    a.click();
+    showMessage('Session saved', 'success');
+}
+
+function loadSession(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const session = JSON.parse(e.target.result);
+            if (!session.log) throw new Error('missing log field');
+
+            logInput.value = session.log;
+            parseLog();
+
+            // Restore annotations after parseLog re-populates canGroups
+            if (session.annotations) {
+                for (const [id, anns] of Object.entries(session.annotations)) {
+                    if (canGroups.has(id)) annotations.set(id, anns);
+                }
+            }
+
+            renderAnnotations();
+            renderHexDump();
+            showMessage(`Session loaded: ${file.name}`, 'success');
+        } catch (err) {
+            showMessage(`Failed to load session: ${err.message}`, 'error');
+        }
+    };
+    reader.readAsText(file);
+}
+
+// ── Export Decoded CSV ────────────────────────────────────────────────────────
+function exportDecodedCSV() {
+    if (!canGroups.size) { showMessage('No data to export', 'error'); return; }
+
+    const rows = [];
+    const header = ['id', 'frame', 'timestamp'];
+    const sigHeaders = [];
+
+    // Build header from all annotations
+    for (const [id, anns] of annotations) {
+        for (const ann of anns) sigHeaders.push(`${id}:${ann.name}${ann.unit ? ' ('+ann.unit+')' : ''}`);
+    }
+    rows.push([...header, ...sigHeaders].join(','));
+
+    for (const [id, frames] of canGroups) {
+        const anns = annotations.get(id) || [];
+        for (let i = 0; i < frames.length; i++) {
+            const f = frames[i];
+            const row = [id, i, f.timestamp.toFixed(6)];
+            // For each global signal column, emit value only if it belongs to this id
+            for (const [sid, sanns] of annotations) {
+                for (const ann of sanns) {
+                    if (sid === id) row.push(decodeSignal(ann, f.payload).toFixed(6));
+                    else row.push('');
+                }
+            }
+            rows.push(row.join(','));
+        }
+    }
+
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.join('\n'));
+    a.download = 'can-decoded.csv';
+    a.click();
+    showMessage('CSV exported', 'success');
 }
