@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CAN Frame Playground</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -14,21 +16,21 @@
             <h1>CAN Frame Playground</h1>
             <div class="controls">
                 <div class="ctrl-group">
-                    <button id="dbcImportBtn" class="btn btn-secondary">Import DBC</button>
+                    <button id="dbcImportBtn" class="btn btn-secondary" title="Import a .dbc file to auto-annotate all matching IDs">Import DBC</button>
                     <input type="file" id="dbcFileInput" accept=".dbc" style="display:none">
                 </div>
                 <div class="ctrl-group">
-                    <button id="saveSessionBtn" class="btn btn-secondary" title="Save session (frames + annotations) to file">Save Session</button>
-                    <button id="loadSessionBtn" class="btn btn-secondary" title="Load a saved session file">Load Session</button>
+                    <button id="saveSessionBtn" class="btn btn-secondary" title="Save session (log + annotations) to a .json file">Save Session</button>
+                    <button id="loadSessionBtn" class="btn btn-secondary" title="Load a previously saved session file">Load Session</button>
                     <input type="file" id="sessionFileInput" accept=".json" style="display:none">
                 </div>
                 <div class="ctrl-group">
-                    <button id="exportBtn" class="btn btn-secondary">Export Annotations</button>
-                    <button id="exportCsvBtn" class="btn btn-secondary" title="Export decoded signal values as CSV">Export CSV</button>
+                    <button id="exportBtn" class="btn btn-secondary" title="Export all signal annotations as JSON">Export Signals</button>
+                    <button id="exportCsvBtn" class="btn btn-secondary" title="Export decoded signal values for all frames as CSV">Export CSV</button>
                 </div>
                 <div class="ctrl-group">
-                    <button id="clearBtn" class="btn btn-secondary">Clear</button>
-                    <button id="darkModeToggle" class="btn btn-secondary">Dark Mode</button>
+                    <button id="clearBtn" class="btn btn-secondary" title="Clear all frames, annotations, and reset the view">Clear</button>
+                    <button id="darkModeToggle" class="btn btn-secondary" title="Toggle dark / light theme">Dark Mode</button>
                 </div>
             </div>
         </header>
@@ -42,7 +44,7 @@
                     <div class="input-actions">
                         <button id="openFileBtn" class="btn btn-secondary" title="Open a log file">Open File</button>
                         <input type="file" id="logFileInput" accept=".log,.txt,.asc,*" style="display:none">
-                        <button id="parseBtn" class="btn btn-primary">Parse Log</button>
+                        <button id="parseBtn" class="btn btn-primary" title="Parse the log text above (Ctrl+Enter)">Parse Log</button>
                     </div>
                 </div>
                 <textarea id="logInput"
@@ -106,15 +108,16 @@
                             <option value="signals">Decoded Signals</option>
                             <option value="rate">Message Rate</option>
                         </select>
-                        <label class="toolbar-option">
+                        <label class="toolbar-option" id="deltaModeLbl" title="Show per-frame change instead of absolute value">
                             <input type="checkbox" id="graphDeltaMode">
                             <span>Delta mode</span>
                         </label>
-                        <label class="toolbar-option">
+                        <label class="toolbar-option" id="hideStaticLbl" title="Hide bytes that never change value">
                             <input type="checkbox" id="graphHideStatic" checked>
                             <span>Hide static</span>
                         </label>
-                        <button id="compareIdsBtn" class="btn btn-secondary btn-sm">Compare IDs ▾</button>
+                        <button id="compareIdsBtn" class="btn btn-secondary btn-sm" title="Overlay additional CAN IDs on the same graph">Compare IDs ▾</button>
+                        <button id="resetZoomBtn" class="btn btn-secondary btn-sm" title="Reset graph zoom and pan to default">Reset Zoom</button>
                         <span id="graphInfo" class="graph-info"></span>
                     </div>
                     <div id="idOverlayPanel" class="id-overlay-panel" style="display:none"></div>
@@ -154,7 +157,7 @@
                         </div>
                         <div class="annotation-form">
                             <h4>Add New Signal</h4>
-                            <form id="annotationForm">
+                            <form id="annotationForm" novalidate>
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label for="signalName">Signal Name:</label>
@@ -212,6 +215,9 @@
             </div>
         </footer>
     </div>
+
+    <!-- Bitmap hover tooltip -->
+    <div id="bitmapTooltip" class="bitmap-tooltip" style="display:none"></div>
 
     <!-- Context Menu -->
     <div id="contextMenu" class="context-menu">

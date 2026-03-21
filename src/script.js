@@ -16,6 +16,8 @@ let vs = null;       // { frames, allFrames, origIdxs, t0, maxLen, hlType, baseF
 let vsPending = false;
 const VS_ROW_H = 38;
 const VS_BUFFER = 8;
+let vsScrollKey = '';
+let vsScrollTop = 0;
 
 const COLOR_PALETTE = [
     [255, 99, 132], [54, 162, 235], [255, 205, 86], [75, 192, 192],
@@ -62,7 +64,11 @@ const logFileInput   = document.getElementById('logFileInput');
 const saveSessionBtn = document.getElementById('saveSessionBtn');
 const loadSessionBtn = document.getElementById('loadSessionBtn');
 const sessionFileInput = document.getElementById('sessionFileInput');
-const exportCsvBtn   = document.getElementById('exportCsvBtn');
+const exportCsvBtn      = document.getElementById('exportCsvBtn');
+const resetZoomBtn      = document.getElementById('resetZoomBtn');
+const deltaModeLbl      = document.getElementById('deltaModeLbl');
+const hideStaticLbl     = document.getElementById('hideStaticLbl');
+const bitmapTooltipEl   = document.getElementById('bitmapTooltip');
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -81,11 +87,22 @@ function setupEventListeners() {
     clearFilterBtn.addEventListener('click', () => { frameFilterInput.value = ''; renderHexDump(); });
     graphDeltaMode.addEventListener('change', renderGraph);
     graphHideStatic.addEventListener('change', renderGraph);
-    graphChartType.addEventListener('change', renderGraph);
+    graphChartType.addEventListener('change', () => { updateGraphToolbarState(); renderGraph(); });
     compareIdsBtn.addEventListener('click', toggleIdOverlayPanel);
+    resetZoomBtn.addEventListener('click', () => { if (chart) chart.resetZoom(); });
     dbcImportBtn.addEventListener('click', () => dbcFileInput.click());
     dbcFileInput.addEventListener('change', handleDBCImport);
     annotationForm.addEventListener('submit', addAnnotation);
+
+    // Ctrl+Enter to parse
+    logInput.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') parseLog(); });
+
+    // Clear form validation state on input
+    annotationForm.querySelectorAll('input').forEach(inp =>
+        inp.addEventListener('input', () => inp.classList.remove('input-error'))
+    );
+
+    updateGraphToolbarState();
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', switchTab));
 
     // File open
@@ -112,6 +129,7 @@ function setupEventListeners() {
 
     // Context menu
     document.addEventListener('click', () => { contextMenu.style.display = 'none'; });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') contextMenu.style.display = 'none'; });
     contextMenu.querySelectorAll('.context-item').forEach(item => {
         item.addEventListener('click', e => {
             e.stopPropagation();
@@ -119,6 +137,17 @@ function setupEventListeners() {
             contextMenu.style.display = 'none';
         });
     });
+}
+
+// ── Graph Toolbar State ────────────────────────────────────────────────────────
+function updateGraphToolbarState() {
+    const t = graphChartType.value;
+    const valuesOnly = t === 'values';
+    graphDeltaMode.disabled  = !valuesOnly;
+    graphHideStatic.disabled = !valuesOnly;
+    deltaModeLbl.classList.toggle('toolbar-option-disabled', !valuesOnly);
+    hideStaticLbl.classList.toggle('toolbar-option-disabled', !valuesOnly);
+    resetZoomBtn.style.display = chart ? '' : 'none';
 }
 
 // ── Parse ─────────────────────────────────────────────────────────────────────
@@ -326,6 +355,11 @@ function renderHexDump() {
     const origIdxs  = frames.map(f => allFrames.indexOf(f));
     const colCount  = maxLen + 2;
 
+    // Preserve scroll position when only highlight/annotation changes, not ID/filter
+    const renderKey = `${selectedId}::${frameFilterInput.value}`;
+    vsScrollTop = (renderKey === vsScrollKey) ? hexDumpContainer.scrollTop : 0;
+    vsScrollKey = renderKey;
+
     vs = { frames, allFrames, origIdxs, t0: allFrames[0].timestamp, maxLen, hlType, baseFrame, coverage };
 
     // Build thead
@@ -347,7 +381,7 @@ function renderHexDump() {
         </tbody>
     </table>`;
 
-    hexDumpContainer.scrollTop = 0;
+    hexDumpContainer.scrollTop = vsScrollTop;
     hexDumpContainer.onscroll = vsOnScroll;
     requestAnimationFrame(vsUpdate);
 }
@@ -390,9 +424,7 @@ function vsUpdate() {
         row.addEventListener('contextmenu', e => {
             e.preventDefault();
             contextMenuFrame = allFrames[parseInt(row.dataset.frameIdx)];
-            contextMenu.style.display = 'block';
-            contextMenu.style.left = `${e.pageX}px`;
-            contextMenu.style.top  = `${e.pageY}px`;
+            showContextMenu(e.pageX, e.pageY);
         });
     });
 }
@@ -597,6 +629,17 @@ function renderGraph() {
                             return ` ${ctx.dataset.label}: 0x${v.toString(16).toUpperCase().padStart(2,'0')} (${v})`;
                         }
                     }
+                },
+                zoom: {
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'x'
+                    },
+                    pan: {
+                        enabled: true,
+                        mode: 'x'
+                    }
                 }
             },
             scales: {
@@ -620,6 +663,7 @@ function renderGraph() {
             interaction: { mode: 'index', axis: 'x', intersect: false }
         }
     });
+    updateGraphToolbarState();
 }
 
 // ── Bit Map ───────────────────────────────────────────────────────────────────
@@ -718,33 +762,52 @@ function renderBitMap() {
         }
     }
 
-    // Hover tooltip via canvas title
+    // Hover tooltip — styled overlay, not canvas.title
     canvas.onmousemove = e => {
         const rect   = canvas.getBoundingClientRect();
         const scaleX = canvas.width  / rect.width;
         const scaleY = canvas.height / rect.height;
         const cx = (e.clientX - rect.left) * scaleX;
         const cy = (e.clientY - rect.top)  * scaleY;
-        if (cx < LEFT) { canvas.title = ''; return; }
 
-        const fi       = Math.floor((cx - LEFT) / FW);
+        if (cx < LEFT) { bitmapTooltipEl.style.display = 'none'; return; }
+
+        const fi        = Math.floor((cx - LEFT) / FW);
         const byteFloat = (cy - TOP) / (8 * BIT_H + BYTE_GAP);
-        const b        = Math.floor(byteFloat);
-        const biFloat  = (byteFloat - b) * (8 * BIT_H + BYTE_GAP) / BIT_H;
-        const bi       = Math.floor(biFloat);
-        const bit      = 7 - bi;
+        const b         = Math.floor(byteFloat);
+        const biFloat   = (byteFloat - b) * (8 * BIT_H + BYTE_GAP) / BIT_H;
+        const bi        = Math.floor(biFloat);
+        const bit       = 7 - bi;
 
         if (fi >= 0 && fi < displayFrames.length && b >= 0 && b < maxBytes && bit >= 0 && bit <= 7) {
-            const frame    = displayFrames[fi];
-            const realIdx  = fi * subsample;
-            const bitVal   = b < frame.payload.length ? (frame.payload[b] >> bit) & 1 : '?';
-            const stat     = bitStats[b * 8 + bi];
-            canvas.title = `Frame ${realIdx}  B${b} bit${bit} = ${bitVal}  (${stat.toggle ? 'toggling' : 'static'})`;
+            const frame   = displayFrames[fi];
+            const realIdx = fi * subsample;
+            const bitVal  = b < frame.payload.length ? (frame.payload[b] >> bit) & 1 : '?';
+            const stat    = bitStats[b * 8 + bi];
+            const byteHex = b < frame.payload.length
+                ? '0x' + frame.payload[b].toString(16).toUpperCase().padStart(2,'0')
+                : '--';
+
+            bitmapTooltipEl.innerHTML =
+                `<div class="btt-row"><span class="btt-lbl">Frame</span><span>${realIdx}</span></div>` +
+                `<div class="btt-row"><span class="btt-lbl">Byte</span><span>B${b} (${byteHex})</span></div>` +
+                `<div class="btt-row"><span class="btt-lbl">Bit</span><span>${bit}</span></div>` +
+                `<div class="btt-row"><span class="btt-lbl">Value</span><span>${bitVal}</span></div>` +
+                `<div class="btt-status ${stat.toggle ? 'btt-toggle' : 'btt-static'}">${stat.toggle ? 'toggling' : ('static ' + stat.staticVal)}</div>`;
+
+            // Position near cursor, clamp to viewport
+            let tx = e.clientX + 14, ty = e.clientY + 14;
+            bitmapTooltipEl.style.display = 'block';
+            const tw = bitmapTooltipEl.offsetWidth, th = bitmapTooltipEl.offsetHeight;
+            if (tx + tw > window.innerWidth  - 4) tx = e.clientX - tw - 8;
+            if (ty + th > window.innerHeight - 4) ty = e.clientY - th - 8;
+            bitmapTooltipEl.style.left = tx + 'px';
+            bitmapTooltipEl.style.top  = ty + 'px';
         } else {
-            canvas.title = '';
+            bitmapTooltipEl.style.display = 'none';
         }
     };
-    canvas.onmouseleave = () => { canvas.title = ''; };
+    canvas.onmouseleave = () => { bitmapTooltipEl.style.display = 'none'; };
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -961,14 +1024,28 @@ function deleteAnnotation(id, index) {
 function addAnnotation(e) {
     e.preventDefault();
     if (!selectedId) { showMessage('Select a CAN ID first', 'error'); return; }
+
+    // Custom validation — mark invalid fields
+    const nameEl   = document.getElementById('signalName');
+    const startEl  = document.getElementById('signalStart');
+    const lengthEl = document.getElementById('signalLength');
+    let valid = true;
+    [nameEl, startEl, lengthEl].forEach(el => {
+        if (!el.value.trim() || (el.type === 'number' && isNaN(parseFloat(el.value)))) {
+            el.classList.add('input-error');
+            valid = false;
+        }
+    });
+    if (!valid) { showMessage('Fill in required fields (Name, Start Bit, Length)', 'error'); return; }
+
     const ann = {
-        name:      document.getElementById('signalName').value,
-        startBit:  parseInt(document.getElementById('signalStart').value),
-        length:    parseInt(document.getElementById('signalLength').value),
+        name:      nameEl.value.trim(),
+        startBit:  parseInt(startEl.value),
+        length:    parseInt(lengthEl.value),
         type:      document.getElementById('signalType').value,
         byteOrder: document.getElementById('signalByteOrder').value,
-        factor:    parseFloat(document.getElementById('signalFactor').value),
-        offset:    parseFloat(document.getElementById('signalOffset').value),
+        factor:    parseFloat(document.getElementById('signalFactor').value) || 1,
+        offset:    parseFloat(document.getElementById('signalOffset').value) || 0,
         unit:      document.getElementById('signalUnit').value
     };
     if (!annotations.has(selectedId)) annotations.set(selectedId, []);
@@ -979,6 +1056,18 @@ function addAnnotation(e) {
     annotationForm.reset();
     document.getElementById('signalFactor').value = '1';
     document.getElementById('signalOffset').value = '0';
+}
+
+// ── Context Menu ──────────────────────────────────────────────────────────────
+function showContextMenu(x, y) {
+    contextMenu.style.display = 'block';
+    // Clamp to viewport
+    const mw = contextMenu.offsetWidth  || 180;
+    const mh = contextMenu.offsetHeight || 120;
+    if (x + mw > window.innerWidth  - 4) x = window.innerWidth  - mw - 4;
+    if (y + mh > window.innerHeight - 4) y = window.innerHeight - mh - 4;
+    contextMenu.style.left = x + 'px';
+    contextMenu.style.top  = y + 'px';
 }
 
 // ── Copy Row As ───────────────────────────────────────────────────────────────
@@ -1036,14 +1125,33 @@ function toggleDarkMode() {
 
 function switchTab(e) {
     const tabId = e.target.dataset.tab;
+
+    // Close compare panel when leaving graph tab
+    if (tabId !== 'graph' && idOverlayPanel.style.display !== 'none') {
+        idOverlayPanel.style.display = 'none';
+        compareIdsBtn.textContent = 'Compare IDs ▾';
+    }
+
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     e.target.classList.add('active');
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     document.getElementById(`${tabId}Tab`).classList.add('active');
+
     switch (tabId) {
         case 'hex':         renderHexDump(); break;
-        case 'graph':       setTimeout(renderGraph, 20); break;
-        case 'bitmap':      setTimeout(renderBitMap, 20); break;
+        case 'graph':
+            if (!selectedId) {
+                graphInfo.textContent = '';
+                if (chart) { chart.destroy(); chart = null; }
+            } else { setTimeout(renderGraph, 20); }
+            break;
+        case 'bitmap':
+            if (!selectedId) {
+                bitmapInfo.textContent = '';
+                const bCtx = document.getElementById('bitMapCanvas').getContext('2d');
+                bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
+            } else { setTimeout(renderBitMap, 20); }
+            break;
         case 'stats':       renderStats(); break;
         case 'annotations': renderAnnotations(); break;
     }

@@ -362,8 +362,13 @@ body {
     cursor: pointer;
     user-select: none;
     color: var(--text-secondary);
+    transition: opacity 0.15s;
 }
 .toolbar-option input { cursor: pointer; accent-color: var(--accent); }
+.toolbar-option-disabled {
+    opacity: 0.35;
+    pointer-events: none;
+}
 .graph-info { margin-left: auto; font-size: 0.78rem; color: var(--text-secondary); font-style: italic; }
 
 /* Compare IDs overlay panel */
@@ -428,6 +433,38 @@ body {
     min-width: 0;
 }
 #bitMapCanvas { display: block; cursor: crosshair; }
+
+/* ── Bitmap Tooltip ──────────────────────────────────────────────────────────── */
+.bitmap-tooltip {
+    position: fixed;
+    z-index: 500;
+    background: var(--tt-bg);
+    border: 1px solid var(--tt-border);
+    border-radius: 5px;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    pointer-events: none;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.55);
+    min-width: 148px;
+}
+.btt-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+}
+.btt-lbl { color: var(--text-secondary); }
+.btt-status {
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.73rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.btt-toggle { color: var(--accent); }
+.btt-static { color: var(--text-secondary); }
 
 /* ── Stats Tab ───────────────────────────────────────────────────────────── */
 .stats-container {
@@ -539,7 +576,12 @@ body {
     border: 1px solid var(--border);
     border-radius: 4px;
     font-size: 0.82rem;
+    transition: border-color 0.12s;
 }
+.form-group input:focus,
+.form-group select:focus { outline: none; border-color: var(--accent); }
+.input-error { border-color: var(--danger) !important; background: rgba(255,77,77,0.06) !important; }
+.input-error:focus { border-color: var(--danger) !important; }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .btn {
