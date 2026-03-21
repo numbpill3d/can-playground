@@ -1,188 +1,141 @@
-# CAN Frame Playground - Tauri Desktop Application
+# CAN Frame Playground
 
-A desktop version of the CAN Frame Playground tool built with Tauri for cross-platform deployment. This application allows you to parse, visualize, and analyze CAN bus logs with a native desktop experience.
+A desktop CAN bus analysis tool built with Tauri. Parse, visualize, and reverse-engineer CAN logs with full privacy — all processing is local, nothing leaves your machine.
+
+---
 
 ## Features
 
-- **Parse CAN bus logs** with syntax highlighting and validation
-- **Visualize hex dumps** with delta change detection and highlighting
-- **Graph delta changes** over time for trend analysis
-- **Signal annotation system** to label and document specific fields
-- **Dark/light mode support** for comfortable viewing
-- **Drag-and-drop file support** for easy log loading
-- **Privacy-focused** - All processing happens locally, no data leaves your machine
-- **Cross-platform** - Works on Windows, macOS, and Linux
+### Analysis Views
+- **Hex Dump** — frame-by-frame byte table with delta/baseline change highlighting, signal overlay coloring, and per-cell tooltips showing hex, decimal, binary, and delta from previous/baseline
+- **Delta Graph** — Chart.js line plot of byte values over time; toggle delta mode (change per frame), hide static bytes, switch to **Message Rate** view (inter-frame interval in ms), or **compare multiple IDs** overlaid on the same graph
+- **Bit Map** — canvas-rendered bit-level timeline for all bytes; static bits are muted, toggling bits are colored per byte. hover for per-bit details. auto-subsamples large logs
+- **Stats** — per-byte table with min, max, mean, stdev, unique value count, change rate, and an inline range bar. timing section shows avg rate (Hz), min/max/avg interval, total span
+- **Annotations** — define signals with start bit, length, byte order (Intel LE / Motorola BE), scaling, offset, and unit. decoded value from the latest frame shown live. delete per signal
+
+### Input & Import
+- **candump format**: `(1720000000.123456) can0 123#AABBCCDDEEFF0011`
+- **Simple format**: `123#AABBCCDDEEFF0011`
+- **DBC file import** — import `.dbc` files to auto-annotate all matching IDs with their signal definitions (Intel and Motorola byte order both supported)
+
+### Hex Dump Tools
+- **Frame filter** — filter displayed rows by byte conditions: `B0>0x80`, `B2==0xFF`, `B1!=0x00`, space-separated or `&&`
+- **Right-click copy** — copy any frame row as: candump line, hex string, Python bytes literal, C array, or CSV
+- **Signal overlay** — colored badges in column headers and bottom borders on cells wherever an annotation covers that byte
+- **Highlight modes** — delta from previous frame, relative to baseline (frame 0), or none
+
+### General
+- Dark / light mode toggle
+- Export annotations as JSON
+- Privacy-focused — no network requests, no telemetry
+
+---
 
 ## Prerequisites
 
-Before building the application, ensure you have the following installed:
+- **Rust** — install via [rustup](https://rustup.rs/)
+- **Node.js** (18+)
+- **Linux only**: `sudo apt install libwebkit2gtk-4.1-dev` (or equivalent for your distro)
+- **Windows**: WebView2 runtime (auto-installed on Win11, download for Win10)
+- **macOS**: no additional dependencies
 
-- **Rust**: Install via [rustup](https://rustup.rs/) (recommended)
-- **Node.js** (18+): Required for development tools
-- **Platform-specific dependencies**:
-  - **Linux**: `webkit2gtk` (install with `sudo apt install libwebkit2gtk-4.1-dev` on Ubuntu/Debian)
-  - **Windows**: WebView2 runtime (automatically installed)
-  - **macOS**: No additional dependencies needed
+---
 
-## Installation & Development
+## Getting Started
 
-### Clone and Setup
 ```bash
-# Navigate to the project directory
-cd can-playground
-
-# Install dependencies
+# install js deps (tauri cli)
 npm install
+
+# run in dev mode (hot-reloads frontend on file changes)
+npm run tauri dev
+
+# production build
+npm run tauri build
 ```
 
-### Development Mode
-```bash
-# Run in development mode
-cargo tauri dev
-```
+Binaries land in `target/release/bundle/`.
 
-This will start the application in development mode with hot reloading enabled.
+> **Note:** the first `npm run tauri dev` will take several minutes to compile ~473 rust crates. subsequent runs are fast (cached).
 
-### Production Build
-```bash
-# Build for production
-cargo tauri build
-```
-
-This will create platform-specific bundles in `target/release/bundle/`.
+---
 
 ## Project Structure
 
 ```
 can-playground/
-├── src/                    # Frontend files (HTML, CSS, JS)
-│   ├── index.html          # Main application HTML structure
-│   ├── script.js           # Core application logic and parsing functions
-│   └── styles.css          # Complete styling with dark/light mode
-├── src-tauri/              # Rust backend
-│   ├── Cargo.toml          # Rust dependencies and configuration
-│   ├── src/
-│   │   └── main.rs         # Rust application entry point
-│   └── icons/              # Application icons
-├── tauri.conf.json         # Tauri configuration
-├── Cargo.toml              # Rust project manifest
-├── build.rs                # Build script for Tauri
-├── package.json            # Node.js package configuration
-└── README.md               # This file
+├── src/                    # frontend (HTML/CSS/JS)
+│   ├── index.html
+│   ├── script.js
+│   └── styles.css
+├── src-tauri/              # rust backend
+│   ├── src/main.rs
+│   └── icons/
+├── tauri.conf.json
+├── Cargo.toml
+├── build.rs
+└── package.json
 ```
-
-## Configuration
-
-### Window Settings
-- **Title**: "CAN Frame Playground"
-- **Size**: 1200x800 pixels (resizable)
-- **Minimum Size**: 800x600 pixels
-- **Resizable**: Yes
-
-### Security Settings
-- **CSP**: Disabled to allow CDN resources (Chart.js, PapaParse)
-- **External Resources**: CDN-hosted Chart.js and PapaParse for visualization
-
-## Usage Guide
-
-### Loading CAN Logs
-1. Copy your CAN log data (supports candump format)
-2. Paste it into the input text area
-3. Click the "Parse Log" button
-
-### Supported Formats
-- Candump format: `(timestamp) interface ID#payload`
-- Example: `(1720000000.123456) can0 123#AABBCCDDEEFF0011`
-
-### Navigation
-- **Hex Dump Tab**: Shows raw hex values with change highlighting
-- **Delta Graph Tab**: Plots value changes over time
-- **Annotations Tab**: Allows signal labeling and documentation
-
-### Highlighting Modes
-- **Delta from Previous**: Highlights bytes that changed from the previous frame
-- **Relative to Baseline**: Highlights differences from a baseline frame
-
-## Customization
-
-### Adding Custom Icons
-Replace the placeholder icons in `src-tauri/icons/` with your custom icons:
-- `icon.png` (for Linux/macOS)
-- `icon.ico` (for Windows)
-- `icon.icns` (for macOS)
-
-### Modifying the UI
-All UI changes can be made in the files under the `src/` directory:
-- `index.html`: Structure and external resource links
-- `styles.css`: Visual styling and dark mode themes
-- `script.js`: Core application logic
-
-### Adding New Features
-To add new features, you can extend the JavaScript functionality in `script.js` or add new Rust commands in `src-tauri/src/main.rs`.
-
-## Distribution
-
-The built application bundles will be located in `target/release/bundle/`:
-
-- **Windows**: 
-  - `target/release/bundle/msi/can-frame-playground_x.x.x_x64.msi`
-  - `target/release/bundle/app/can-frame-playground_x.x.x_x64.app`
-
-- **macOS**: 
-  - `target/release/bundle/dmg/can-frame-playground_x.x.x_x64.dmg`
-  - `target/release/bundle/macos/can-frame-playground_x.x.x_x64.app`
-
-- **Linux**: 
-  - `target/release/bundle/deb/can-frame-playground_x.x.x_amd64.deb`
-  - `target/release/bundle/appimage/can-frame-playground_x.x.x_amd64.AppImage`
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Build fails on Linux**
-   - Ensure you have `webkit2gtk` installed: `sudo apt install libwebkit2gtk-4.1-dev`
-
-2. **Missing dependencies**
-   - Run `cargo tauri info` to diagnose dependency issues
-
-3. **Icons not showing**
-   - Verify icon paths in `tauri.conf.json` match actual files
-
-4. **External resources not loading**
-   - Check internet connection for CDN resources (Chart.js, PapaParse)
-
-### Getting Help
-
-Run `cargo tauri info` to get detailed system information for troubleshooting.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Commit your changes (`git commit -m 'Add amazing feature'`)
-5. Push to the branch (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Technologies Used
-
-- **[Tauri](https://tauri.app/)**: Framework for building desktop apps with web technologies
-- **[Rust](https://www.rust-lang.org/)**: Backend language for system-level operations
-- **Web Technologies**: HTML, CSS, JavaScript for the UI
-- **[Chart.js](https://www.chartjs.org/)**: For plotting delta graphs
-- **[PapaParse](https://www.papaparse.com/)**: For CSV parsing
-
-## Acknowledgments
-
-- Thanks to the Tauri team for creating an excellent framework for desktop applications
-- The CAN bus community for their continued work in automotive communication protocols
-- Zenotrek for getting me interested in car hacking/reverse engingeering in the first place
 
 ---
 
-Built with ❤️ using Tauri v2
+## Usage
+
+### Parsing logs
+1. paste candump output (or `ID#payload` lines) into the text area
+2. click **Parse Log**
+3. click any ID in the sidebar to inspect it
+
+### Defining signals manually
+1. switch to the **Annotations** tab
+2. fill in signal name, start bit, length, byte order, type, scale, offset, unit
+3. click **Add Signal** — the signal will appear as a colored overlay in the hex dump and show its decoded value live
+
+### Using a DBC file
+1. click **Import DBC** in the header
+2. pick your `.dbc` file — all signals for matching IDs are imported automatically
+3. switch to **Annotations** to review, or see the overlays immediately in **Hex Dump**
+
+### Filtering frames
+in the **Hex Dump** tab, type conditions in the filter bar:
+```
+B0 > 0x80
+B2 == 0xFF  B1 != 0x00
+B0 >= 0x10 && B0 <= 0x7F
+```
+
+### Copying a frame
+right-click any row in the hex dump for copy options.
+
+---
+
+## Troubleshooting
+
+**app gets stuck on startup / blank window**
+- make sure `tauri.conf.json` has no `devUrl` field under `build` — it should only have `frontendDist: "./src"`. if a `devUrl` is present, tauri will wait for a dev server that never starts.
+
+**build fails on linux**
+- install webkit2gtk: `sudo apt install libwebkit2gtk-4.1-dev`
+- run `cargo tauri info` for a full dependency report
+
+**DBC signals decode incorrectly**
+- double-check byte order (Intel vs Motorola) and start bit convention — different tools use different numbering schemes
+
+---
+
+## Tech Stack
+
+- [Tauri v2](https://tauri.app/) — desktop shell
+- [Rust](https://www.rust-lang.org/) — native backend
+- [Chart.js](https://www.chartjs.org/) — graphing
+- HTML / CSS / vanilla JS — UI
+
+---
+
+## License
+
+MIT — see LICENSE file.
+
+---
+
+*acknowledgments: tauri team, the CAN bus community, and Zenotrek for getting me into car hacking / reverse engineering in the first place*
