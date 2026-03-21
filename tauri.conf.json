@@ -18,8 +18,8 @@
     "externalBin": [],
     "copyright": "",
     "category": "DeveloperTool",
-    "shortDescription": "",
-    "longDescription": ""
+    "shortDescription": "CAN bus log viewer and signal decoder",
+    "longDescription": "CAN Frame Playground is a desktop tool for exploring, annotating, and decoding CAN bus logs. Load candump, Vector ASC, or PCAN TRC files, annotate signals with DBC import or manual entry, and inspect data via hex dump, byte graph, bit map, and statistics views. Supports live capture from SocketCAN interfaces."
   },
   "plugins": {},
   "app": {

@@ -23,7 +23,6 @@ let vsPending = false;
 const VS_ROW_H = 38;
 const VS_BUFFER = 8;
 let vsScrollKey = '';
-let vsScrollTop = 0;
 
 const COLOR_PALETTE = [
     [255, 99, 132], [54, 162, 235], [255, 205, 86], [75, 192, 192],
@@ -79,6 +78,9 @@ const importSignalsBtn     = document.getElementById('importSignalsBtn');
 const importSignalsInput   = document.getElementById('importSignalsInput');
 const captureBtn           = document.getElementById('captureBtn');
 const captureIfaceSelect   = document.getElementById('captureIfaceSelect');
+const captureGroup         = document.getElementById('captureGroup');
+const bitMapCanvas         = document.getElementById('bitMapCanvas');
+const deltaChartEl         = document.getElementById('deltaChart');
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -316,14 +318,18 @@ function filterIds() {
         el.style.display = el.dataset.id.toLowerCase().includes(s) ? '' : 'none');
 }
 
+function setSelectedIdTitle(id) {
+    const frames = canGroups.get(id);
+    const lbl    = idLabels.get(id);
+    selectedIdTitle.textContent = `CAN ID: ${id}${lbl ? '  (' + lbl + ')' : ''}  ·  ${frames.length} frames  ·  DLC ${frames[0].dlc}`;
+}
+
 function selectCanId(id) {
     selectedId = id;
     document.querySelectorAll('.id-item').forEach(el => el.classList.remove('selected'));
     document.querySelector(`.id-item[data-id="${id}"]`)?.classList.add('selected');
 
-    const frames = canGroups.get(id);
-    const lbl = idLabels.get(id);
-    selectedIdTitle.textContent = `CAN ID: ${id}${lbl ? '  (' + lbl + ')' : ''}  ·  ${frames.length} frames  ·  DLC ${frames[0].dlc}`;
+    setSelectedIdTitle(id);
 
     renderHexDump();
     renderAnnotations();
@@ -413,7 +419,7 @@ function renderHexDump() {
 
     // Preserve scroll position when only highlight/annotation changes, not ID/filter
     const renderKey = `${selectedId}::${frameFilterInput.value}`;
-    vsScrollTop = (renderKey === vsScrollKey) ? hexDumpContainer.scrollTop : 0;
+    const savedScrollTop = (vsScrollKey === renderKey) ? hexDumpContainer.scrollTop : 0;
     vsScrollKey = renderKey;
 
     vs = { frames, allFrames, origIdxs, t0: allFrames[0].timestamp, maxLen, hlType, baseFrame, coverage };
@@ -437,7 +443,7 @@ function renderHexDump() {
         </tbody>
     </table>`;
 
-    hexDumpContainer.scrollTop = vsScrollTop;
+    hexDumpContainer.scrollTop = savedScrollTop;
     hexDumpContainer.onscroll = vsOnScroll;
     requestAnimationFrame(vsUpdate);
 }
@@ -659,7 +665,7 @@ function renderGraph() {
     const labels = labelFrames.map(f => (f.timestamp - t0).toFixed(3));
 
     if (chart) chart.destroy();
-    const ctx = document.getElementById('deltaChart').getContext('2d');
+    const ctx = deltaChartEl.getContext('2d');
     chart = new Chart(ctx, {
         type: 'line',
         data: { labels, datasets },
@@ -729,7 +735,7 @@ function renderBitMap() {
     const frames = canGroups.get(selectedId);
     if (!frames.length) return;
 
-    const canvas  = document.getElementById('bitMapCanvas');
+    const canvas  = bitMapCanvas;
     const ctx     = canvas.getContext('2d');
     const maxBytes = Math.max(...frames.map(f => f.payload.length));
 
@@ -874,6 +880,7 @@ function renderStats() {
     }
 
     const frames   = canGroups.get(selectedId);
+    const analysis = fieldAnalysisMap.get(selectedId) || [];
     const maxBytes = Math.max(...frames.map(f => f.payload.length));
 
     let html = `<div class="stats-header">
@@ -895,13 +902,7 @@ function renderStats() {
         const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
         const stdev = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length);
         const unique = new Set(vals).size;
-
-        let changes = 0;
-        for (let i = 1; i < frames.length; i++) {
-            if (j < frames[i].payload.length && j < frames[i-1].payload.length &&
-                frames[i].payload[j] !== frames[i-1].payload[j]) changes++;
-        }
-        const changeRate = frames.length > 1 ? (changes / (frames.length - 1) * 100) : 0;
+        const changeRate = (analysis[j]?.changeFrequency ?? 0) * 100;
 
         const [r, g, b] = getColorTuple(j);
         const minPct   = (min / 255 * 100).toFixed(1);
@@ -1155,8 +1156,8 @@ function clearAll() {
     statsContainer.innerHTML = '<p class="empty-message">Select a CAN ID to view statistics</p>';
     graphInfo.textContent = ''; filterCount.textContent = ''; frameFilterInput.value = '';
     if (chart) { chart.destroy(); chart = null; }
-    const bCtx = document.getElementById('bitMapCanvas').getContext('2d');
-    bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
+    const bCtx = bitMapCanvas.getContext('2d');
+    bCtx.clearRect(0, 0, bitMapCanvas.width, bitMapCanvas.height);
     updateFrameCount();
     showMessage('Data cleared', 'success');
 }
@@ -1205,8 +1206,8 @@ function switchTab(e) {
         case 'bitmap':
             if (!selectedId) {
                 bitmapInfo.textContent = '';
-                const bCtx = document.getElementById('bitMapCanvas').getContext('2d');
-                bCtx.clearRect(0, 0, bCtx.canvas.width, bCtx.canvas.height);
+                const bCtx = bitMapCanvas.getContext('2d');
+                bCtx.clearRect(0, 0, bitMapCanvas.width, bitMapCanvas.height);
             } else { setTimeout(renderBitMap, 20); }
             break;
         case 'stats':       renderStats(); break;
@@ -1370,11 +1371,7 @@ function startLabelEdit(area, id) {
         span.textContent = val || 'double-click to label';
         area.innerHTML = '';
         area.appendChild(span);
-        // Update title if this is the selected ID
-        if (id === selectedId) {
-            const frames = canGroups.get(id);
-            selectedIdTitle.textContent = `CAN ID: ${id}${val ? '  (' + val + ')' : ''}  ·  ${frames.length} frames  ·  DLC ${frames[0].dlc}`;
-        }
+        if (id === selectedId) setSelectedIdTitle(id);
     };
 
     input.addEventListener('blur', commit);
@@ -1420,7 +1417,7 @@ function handleKeyNav(e) {
 
 // ── Live Capture ──────────────────────────────────────────────────────────────
 async function populateCaptureInterfaces() {
-    if (!window.__TAURI__) { document.getElementById('captureGroup').style.display = 'none'; return; }
+    if (!window.__TAURI__) { captureGroup.style.display = 'none'; return; }
     try {
         const { invoke } = window.__TAURI__.core;
         const ifaces = await invoke('get_can_interfaces');
@@ -1501,10 +1498,7 @@ function appendLiveFrame(frame) {
                 if (activeTab === 'hex')   renderHexDump();
                 if (activeTab === 'graph') renderGraph();
                 if (activeTab === 'stats') renderStats();
-                // Update title frame count
-                const lbl = idLabels.get(selectedId);
-                const frames = canGroups.get(selectedId);
-                selectedIdTitle.textContent = `CAN ID: ${selectedId}${lbl ? '  (' + lbl + ')' : ''}  ·  ${frames.length} frames  ·  DLC ${frames[0].dlc}`;
+                setSelectedIdTitle(selectedId);
             }
         }, 100);
     }
