@@ -26,7 +26,15 @@
                 </div>
                 <div class="ctrl-group">
                     <button id="exportBtn" class="btn btn-secondary" title="Export all signal annotations as JSON">Export Signals</button>
+                    <button id="importSignalsBtn" class="btn btn-secondary" title="Import a signals JSON file and merge annotations">Import Signals</button>
+                    <input type="file" id="importSignalsInput" accept=".json" style="display:none">
                     <button id="exportCsvBtn" class="btn btn-secondary" title="Export decoded signal values for all frames as CSV">Export CSV</button>
+                </div>
+                <div class="ctrl-group capture-ctrl-group" id="captureGroup">
+                    <select id="captureIfaceSelect" class="toolbar-select capture-iface" title="CAN interface to capture from">
+                        <option value="any">any</option>
+                    </select>
+                    <button id="captureBtn" class="btn btn-secondary" title="Start live capture from the selected CAN interface">Start Capture</button>
                 </div>
                 <div class="ctrl-group">
                     <button id="clearBtn" class="btn btn-secondary" title="Clear all frames, annotations, and reset the view">Clear</button>

@@ -158,6 +158,32 @@ body {
 .id-changing { color: var(--warning); }
 .id-static   { color: var(--text-secondary); }
 .id-item.selected .id-changing { color: #ffe066; }
+.id-label-area {
+    margin-top: 3px;
+    cursor: text;
+}
+.id-label-text {
+    font-size: 0.72rem;
+    color: var(--accent2);
+    font-style: italic;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.id-label-placeholder { color: var(--border); font-style: italic; }
+.id-item.selected .id-label-text { color: rgba(255,255,255,0.6); }
+.id-item.selected .id-label-placeholder { color: rgba(255,255,255,0.25); }
+.id-label-input {
+    width: 100%;
+    padding: 0.15rem 0.3rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    font-size: 0.72rem;
+    outline: none;
+}
 
 /* ── Main View ───────────────────────────────────────────────────────────── */
 .main-view {
@@ -610,6 +636,12 @@ body {
 }
 .btn-delete { color: var(--danger); }
 .btn-delete:hover { background: rgba(255,77,77,0.14); }
+.btn-capture-running { background: rgba(255,100,60,0.25) !important; color: #ff6a3c !important; border-color: #ff6a3c !important; }
+.btn-capture-running:hover { background: rgba(255,100,60,0.38) !important; }
+.capture-iface {
+    width: 80px;
+    font-size: 0.82rem;
+}
 
 /* ── Context Menu ────────────────────────────────────────────────────────── */
 .context-menu {

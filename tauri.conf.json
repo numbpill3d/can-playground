@@ -23,6 +23,7 @@
   },
   "plugins": {},
   "app": {
+    "withGlobalTauri": true,
     "security": {
       "csp": null
     },

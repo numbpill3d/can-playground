@@ -1,0 +1,8 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for CAN Frame Playground",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

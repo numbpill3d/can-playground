@@ -10,6 +10,12 @@ let chart = null;
 let annotations = new Map();
 let graphOverlayIds = new Set();
 let contextMenuFrame = null;
+let idLabels = new Map();         // id -> human label string
+let hexFrameIdx = 0;              // keyboard nav: current frame index
+let captureRunning = false;
+let captureUnlisten = null;
+let captureStoppedUnlisten = null;
+let liveUpdateTimer = null;
 
 // virtual scroll state
 let vs = null;       // { frames, allFrames, origIdxs, t0, maxLen, hlType, baseFrame, coverage }
@@ -64,11 +70,15 @@ const logFileInput   = document.getElementById('logFileInput');
 const saveSessionBtn = document.getElementById('saveSessionBtn');
 const loadSessionBtn = document.getElementById('loadSessionBtn');
 const sessionFileInput = document.getElementById('sessionFileInput');
-const exportCsvBtn      = document.getElementById('exportCsvBtn');
-const resetZoomBtn      = document.getElementById('resetZoomBtn');
-const deltaModeLbl      = document.getElementById('deltaModeLbl');
-const hideStaticLbl     = document.getElementById('hideStaticLbl');
-const bitmapTooltipEl   = document.getElementById('bitmapTooltip');
+const exportCsvBtn         = document.getElementById('exportCsvBtn');
+const resetZoomBtn         = document.getElementById('resetZoomBtn');
+const deltaModeLbl         = document.getElementById('deltaModeLbl');
+const hideStaticLbl        = document.getElementById('hideStaticLbl');
+const bitmapTooltipEl      = document.getElementById('bitmapTooltip');
+const importSignalsBtn     = document.getElementById('importSignalsBtn');
+const importSignalsInput   = document.getElementById('importSignalsInput');
+const captureBtn           = document.getElementById('captureBtn');
+const captureIfaceSelect   = document.getElementById('captureIfaceSelect');
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -126,6 +136,17 @@ function setupEventListeners() {
 
     // Export CSV
     exportCsvBtn.addEventListener('click', exportDecodedCSV);
+
+    // Import signals
+    importSignalsBtn.addEventListener('click', () => importSignalsInput.click());
+    importSignalsInput.addEventListener('change', e => { if (e.target.files[0]) importSignals(e.target.files[0]); e.target.value = ''; });
+
+    // Live capture
+    captureBtn.addEventListener('click', () => captureRunning ? stopCapture() : startCapture());
+    populateCaptureInterfaces();
+
+    // Keyboard navigation
+    document.addEventListener('keydown', handleKeyNav);
 
     // Context menu
     document.addEventListener('click', () => { contextMenu.style.display = 'none'; });
@@ -189,9 +210,35 @@ function parseLine(line, idx = 0) {
     // candump: (ts) iface ID#payload
     const m1 = line.match(/^\((\d+\.\d+)\)\s+\w+\s+([0-9A-Fa-f]+)#([0-9A-Fa-f]*)$/);
     if (m1) return buildFrame(m1[2].toUpperCase(), parseFloat(m1[1]), m1[3]);
+
+    // Vector .asc: ts  ch  ID  Rx/Tx  d  dlc  B0 B1 ...
+    // e.g.  "   0.000123  1  0CF  Rx   d 8  AA BB CC DD EE FF 00 11"
+    const m3 = line.match(/^\s*([\d.]+)\s+\d+\s+([0-9A-Fa-f]+)\s+\w+\s+d\s+\d+\s+((?:[0-9A-Fa-f]{2}\s*)+)/i);
+    if (m3) {
+        const hex = m3[3].trim().replace(/\s+/g, '');
+        return buildFrame(m3[2].toUpperCase(), parseFloat(m3[1]), hex);
+    }
+
+    // PCAN .trc v1.1: idx)  ts  Rx/Tx  ID  dlc  B0 B1 ...
+    // e.g.  "   1)     0.0000 Rx  0123  8  AA BB CC DD EE FF 00 11"
+    const m4 = line.match(/^\s*\d+\)\s+([\d.]+)\s+\w+\s+([0-9A-Fa-f]+)\s+\d+\s+((?:[0-9A-Fa-f]{2}\s*)+)/i);
+    if (m4) {
+        const hex = m4[3].trim().replace(/\s+/g, '');
+        return buildFrame(m4[2].toUpperCase(), parseFloat(m4[1]) / 1000, hex);
+    }
+
+    // PCAN .trc v2.x: idx)  ts  DT  ID  dlc  B0 B1 ...
+    // e.g.  "      1)       0.0123 DT 0123 8  AA BB CC DD EE FF 00 11"
+    const m5 = line.match(/^\s*\d+\)\s+([\d.]+)\s+DT\s+([0-9A-Fa-f]+)\s+\d+\s+((?:[0-9A-Fa-f]{2}\s*)+)/i);
+    if (m5) {
+        const hex = m5[3].trim().replace(/\s+/g, '');
+        return buildFrame(m5[2].toUpperCase(), parseFloat(m5[1]) / 1000, hex);
+    }
+
     // simple: ID#payload — use sequential synthetic timestamps
     const m2 = line.match(/^([0-9A-Fa-f]+)#([0-9A-Fa-f]*)$/);
     if (m2) return buildFrame(m2[1].toUpperCase(), idx * 0.001, m2[2]);
+
     throw new Error('no match');
 }
 
@@ -239,6 +286,7 @@ function updateIdList() {
         const div = document.createElement('div');
         div.className = 'id-item';
         div.dataset.id = id;
+        const label = idLabels.get(id) || '';
         div.innerHTML = `
             <div class="id-info">
                 <span class="id-hex">${id}</span>
@@ -249,8 +297,15 @@ function updateIdList() {
                 ${changing
                     ? `<span class="id-changing">${changing} changing</span>`
                     : `<span class="id-static">static</span>`}
+            </div>
+            <div class="id-label-area" data-id="${id}">
+                <span class="id-label-text ${label ? '' : 'id-label-placeholder'}">${label || 'double-click to label'}</span>
             </div>`;
         div.addEventListener('click', () => selectCanId(id));
+        div.querySelector('.id-label-area').addEventListener('dblclick', e => {
+            e.stopPropagation();
+            startLabelEdit(div.querySelector('.id-label-area'), id);
+        });
         idList.appendChild(div);
     }
 }
@@ -267,7 +322,8 @@ function selectCanId(id) {
     document.querySelector(`.id-item[data-id="${id}"]`)?.classList.add('selected');
 
     const frames = canGroups.get(id);
-    selectedIdTitle.textContent = `CAN ID: ${id}  ·  ${frames.length} frames  ·  DLC ${frames[0].dlc}`;
+    const lbl = idLabels.get(id);
+    selectedIdTitle.textContent = `CAN ID: ${id}${lbl ? '  (' + lbl + ')' : ''}  ·  ${frames.length} frames  ·  DLC ${frames[0].dlc}`;
 
     renderHexDump();
     renderAnnotations();
@@ -1086,9 +1142,10 @@ function copyFrameAs(frame, format) {
 
 // ── Clear / Export ────────────────────────────────────────────────────────────
 function clearAll() {
+    if (captureRunning) stopCapture();
     canFrames = []; canGroups.clear(); fieldAnalysisMap.clear();
-    annotations.clear(); graphOverlayIds.clear(); selectedId = null;
-    vs = null;
+    annotations.clear(); graphOverlayIds.clear(); idLabels.clear();
+    selectedId = null; hexFrameIdx = 0; vs = null;
     logInput.value = '';
     idList.innerHTML = '<p class="empty-message">No data loaded. Paste CAN log and click Parse.</p>';
     hexDumpContainer.innerHTML = '<p class="empty-message">Select a CAN ID to view hex dump</p>';
@@ -1184,10 +1241,11 @@ function openLogFile(file) {
 function saveSession() {
     if (!canGroups.size) { showMessage('No data to save', 'error'); return; }
     const session = {
-        version: 1,
+        version: 2,
         savedAt: new Date().toISOString(),
         log: logInput.value,
-        annotations: Object.fromEntries(annotations)
+        annotations: Object.fromEntries(annotations),
+        idLabels: Object.fromEntries(idLabels)
     };
     const a = document.createElement('a');
     a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(session, null, 2));
@@ -1206,13 +1264,19 @@ function loadSession(file) {
             logInput.value = session.log;
             parseLog();
 
-            // Restore annotations after parseLog re-populates canGroups
+            // Restore annotations + labels after parseLog re-populates canGroups
             if (session.annotations) {
                 for (const [id, anns] of Object.entries(session.annotations)) {
                     if (canGroups.has(id)) annotations.set(id, anns);
                 }
             }
+            if (session.idLabels) {
+                for (const [id, label] of Object.entries(session.idLabels)) {
+                    if (canGroups.has(id)) idLabels.set(id, label);
+                }
+            }
 
+            updateIdList();
             renderAnnotations();
             renderHexDump();
             showMessage(`Session loaded: ${file.name}`, 'success');
@@ -1258,4 +1322,190 @@ function exportDecodedCSV() {
     a.download = 'can-decoded.csv';
     a.click();
     showMessage('CSV exported', 'success');
+}
+
+// ── Import Signals ────────────────────────────────────────────────────────────
+function importSignals(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const data = JSON.parse(e.target.result);
+            const src = data.annotations || data; // handle both session files and bare annotation exports
+            let applied = 0;
+            for (const [id, anns] of Object.entries(src)) {
+                if (!Array.isArray(anns)) continue;
+                if (!annotations.has(id)) annotations.set(id, []);
+                annotations.get(id).push(...anns);
+                applied += anns.length;
+            }
+            renderAnnotations();
+            renderHexDump();
+            showMessage(`Imported ${applied} signal${applied !== 1 ? 's' : ''}`, 'success');
+        } catch (err) {
+            showMessage(`Import failed: ${err.message}`, 'error');
+        }
+    };
+    reader.readAsText(file);
+}
+
+// ── ID Label Editing ──────────────────────────────────────────────────────────
+function startLabelEdit(area, id) {
+    const currentLabel = idLabels.get(id) || '';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentLabel;
+    input.className = 'id-label-input';
+    input.placeholder = 'label…';
+    area.innerHTML = '';
+    area.appendChild(input);
+    input.focus();
+    input.select();
+
+    const commit = () => {
+        const val = input.value.trim();
+        if (val) idLabels.set(id, val); else idLabels.delete(id);
+        // Refresh just this id-item's label area
+        const span = document.createElement('span');
+        span.className = `id-label-text ${val ? '' : 'id-label-placeholder'}`;
+        span.textContent = val || 'double-click to label';
+        area.innerHTML = '';
+        area.appendChild(span);
+        // Update title if this is the selected ID
+        if (id === selectedId) {
+            const frames = canGroups.get(id);
+            selectedIdTitle.textContent = `CAN ID: ${id}${val ? '  (' + val + ')' : ''}  ·  ${frames.length} frames  ·  DLC ${frames[0].dlc}`;
+        }
+    };
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = currentLabel; input.blur(); }
+        e.stopPropagation(); // don't trigger keyboard nav
+    });
+}
+
+// ── Keyboard Navigation ───────────────────────────────────────────────────────
+function handleKeyNav(e) {
+    const tag = document.activeElement?.tagName;
+    const focused = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+    // Tab switching: 1–5 (not when focused on inputs)
+    if (!focused && e.key >= '1' && e.key <= '5' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const idx = parseInt(e.key) - 1;
+        const tabs = document.querySelectorAll('.tab-btn');
+        if (tabs[idx]) { tabs[idx].click(); e.preventDefault(); }
+        return;
+    }
+
+    // f to focus frame filter
+    if (!focused && e.key === 'f' && !e.ctrlKey) {
+        frameFilterInput.focus();
+        e.preventDefault();
+        return;
+    }
+
+    // Arrow keys to navigate frames in hex tab
+    const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+    if (!focused && activeTab === 'hex' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        if (!vs || !vs.frames.length) return;
+        e.preventDefault();
+        const total = vs.frames.length;
+        hexFrameIdx = e.key === 'ArrowDown'
+            ? Math.min(hexFrameIdx + 1, total - 1)
+            : Math.max(hexFrameIdx - 1, 0);
+        hexDumpContainer.scrollTop = hexFrameIdx * VS_ROW_H;
+    }
+}
+
+// ── Live Capture ──────────────────────────────────────────────────────────────
+async function populateCaptureInterfaces() {
+    if (!window.__TAURI__) { document.getElementById('captureGroup').style.display = 'none'; return; }
+    try {
+        const { invoke } = window.__TAURI__.core;
+        const ifaces = await invoke('get_can_interfaces');
+        captureIfaceSelect.innerHTML = '';
+        const defaults = ifaces.length ? ifaces : ['any', 'can0', 'vcan0'];
+        defaults.forEach(iface => {
+            const opt = document.createElement('option');
+            opt.value = iface;
+            opt.textContent = iface;
+            captureIfaceSelect.appendChild(opt);
+        });
+    } catch {
+        // non-Tauri env or no interfaces — leave default
+    }
+}
+
+async function startCapture() {
+    if (!window.__TAURI__) { showMessage('Live capture requires the desktop app', 'error'); return; }
+    const iface = captureIfaceSelect.value || 'any';
+    try {
+        const { invoke } = window.__TAURI__.core;
+        const { listen }  = window.__TAURI__.event;
+
+        captureUnlisten = await listen('can_frame', ev => {
+            try {
+                const frame = parseLine(ev.payload.trim(), canFrames.length);
+                if (frame) appendLiveFrame(frame);
+            } catch { /* skip unparseable lines */ }
+        });
+
+        captureStoppedUnlisten = await listen('capture_stopped', () => {
+            captureRunning = false;
+            updateCaptureUI();
+            showMessage('Capture ended', 'info');
+        });
+
+        await invoke('start_capture', { iface });
+        captureRunning = true;
+        updateCaptureUI();
+        showMessage(`Capturing on ${iface}`, 'success');
+    } catch (err) {
+        showMessage(`Capture failed: ${err}`, 'error');
+    }
+}
+
+async function stopCapture() {
+    if (!window.__TAURI__) return;
+    try {
+        const { invoke } = window.__TAURI__.core;
+        await invoke('stop_capture');
+    } catch { /* ignore */ }
+    if (captureUnlisten)        { captureUnlisten();        captureUnlisten = null; }
+    if (captureStoppedUnlisten) { captureStoppedUnlisten(); captureStoppedUnlisten = null; }
+    captureRunning = false;
+    updateCaptureUI();
+}
+
+function updateCaptureUI() {
+    captureBtn.textContent = captureRunning ? 'Stop Capture' : 'Start Capture';
+    captureBtn.classList.toggle('btn-capture-running', captureRunning);
+    captureIfaceSelect.disabled = captureRunning;
+}
+
+function appendLiveFrame(frame) {
+    canFrames.push(frame);
+    if (!canGroups.has(frame.id)) canGroups.set(frame.id, []);
+    canGroups.get(frame.id).push(frame);
+
+    // Debounced UI refresh at ~10 Hz
+    if (!liveUpdateTimer) {
+        liveUpdateTimer = setTimeout(() => {
+            liveUpdateTimer = null;
+            canGroups.forEach((frames, id) => fieldAnalysisMap.set(id, detectChangingFields(frames)));
+            updateIdList();
+            updateFrameCount();
+            if (selectedId && canGroups.has(selectedId)) {
+                const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+                if (activeTab === 'hex')   renderHexDump();
+                if (activeTab === 'graph') renderGraph();
+                if (activeTab === 'stats') renderStats();
+                // Update title frame count
+                const lbl = idLabels.get(selectedId);
+                const frames = canGroups.get(selectedId);
+                selectedIdTitle.textContent = `CAN ID: ${selectedId}${lbl ? '  (' + lbl + ')' : ''}  ·  ${frames.length} frames  ·  DLC ${frames[0].dlc}`;
+            }
+        }, 100);
+    }
 }
