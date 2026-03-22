@@ -4,11 +4,35 @@ A desktop CAN bus analysis tool built with Tauri. Parse, visualize, and reverse-
 
 ---
 
+## Install (Linux)
+
+Pre-built binaries are available on the [releases page](https://github.com/numbpilled/can-playground/releases).
+
+**.deb** — Debian / Ubuntu / Mint / Kali:
+```bash
+sudo dpkg -i "CAN Frame Playground_0.1.0_amd64.deb"
+```
+
+**.rpm** — Fedora / RHEL / openSUSE:
+```bash
+sudo rpm -i "CAN Frame Playground-0.1.0-1.x86_64.rpm"
+```
+
+**.AppImage** — any Linux distro, no install needed:
+```bash
+chmod +x "CAN Frame Playground_0.1.0_amd64.AppImage"
+./"CAN Frame Playground_0.1.0_amd64.AppImage"
+```
+
+> **Note:** live capture requires `candump` — install via `sudo apt install can-utils`. Windows and macOS can build from source but live capture is Linux-only.
+
+---
+
 ## Features
 
 ### Analysis Views
 - **Hex Dump** — frame-by-frame byte table with delta/baseline change highlighting, signal overlay coloring, per-cell tooltips (hex, dec, bin, delta), virtual scroll for smooth handling of 100k+ frame logs, and keyboard arrow-key frame navigation
-- **Delta Graph** — Chart.js line plot with scroll-wheel zoom and drag-pan; modes: byte values, decoded signals, message rate (inter-frame interval); toggle delta mode, hide static bytes, overlay multiple IDs
+- **Delta Graph** — Chart.js line plot with scroll-wheel zoom and drag-pan; modes: byte values, decoded signals, message rate (inter-frame interval); toggle delta mode, hide static bytes; **Compare IDs** overlays multiple CAN IDs on the same graph
 - **Bit Map** — canvas-rendered bit-level timeline across all frames; static bits are muted, toggling bits are colored per byte; styled hover tooltip shows frame, byte, bit, value, and toggle status; auto-subsamples large logs
 - **Stats** — per-byte table: min, max, mean, stdev, unique value count, change rate, inline range bar; timing section: avg rate (Hz), min/max/avg interval, total span
 - **Annotations** — define signals with start bit, length, byte order (Intel LE / Motorola BE), type, scale, offset, unit; decoded value from latest frame shown live; delete per signal
@@ -47,14 +71,14 @@ A desktop CAN bus analysis tool built with Tauri. Parse, visualize, and reverse-
 
 ---
 
-## Prerequisites
+## Prerequisites (building from source)
 
 - **Rust** — install via [rustup](https://rustup.rs/)
 - **Node.js** (18+)
 - **Linux**: `sudo apt install libwebkit2gtk-4.1-dev` (or distro equivalent)
 - **Windows**: WebView2 runtime (auto-installed on Win11, download for Win10)
 - **macOS**: no additional dependencies
-- **Live capture (Linux only)**: `sudo apt install can-utils`
+- **Live capture** (Linux only): `sudo apt install can-utils`
 
 ---
 
