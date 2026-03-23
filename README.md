@@ -2,6 +2,9 @@
 
 A desktop CAN bus analysis tool built with Tauri. Parse, visualize, and reverse-engineer CAN logs — or capture live from a SocketCAN interface. All processing is local, nothing leaves your machine.
 
+<img width="1204" height="800" alt="canplkayround3" src="https://github.com/user-attachments/assets/a91d967a-691b-4b14-bd5d-86bc34e4749c" />
+
+
 ---
 
 ## Install (Linux)
