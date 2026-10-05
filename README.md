@@ -9,7 +9,7 @@ A desktop CAN bus analysis tool built with Tauri. Parse, visualize, and reverse-
 
 ## Install (Linux)
 
-Pre-built binaries are available on the [releases page](https://github.com/numbpilled/can-playground/releases).
+Pre-built binaries are available on the [releases page](https://github.com/numbpill3d/can-playground/releases).
 
 **.deb** — Debian / Ubuntu / Mint / Kali:
 ```bash
