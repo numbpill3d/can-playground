@@ -1449,6 +1449,7 @@ async function startCapture() {
         });
 
         captureStoppedUnlisten = await listen('capture_stopped', () => {
+            clearCaptureListeners();
             captureRunning = false;
             updateCaptureUI();
             showMessage('Capture ended', 'info');
@@ -1459,8 +1460,14 @@ async function startCapture() {
         updateCaptureUI();
         showMessage(`Capturing on ${iface}`, 'success');
     } catch (err) {
+        clearCaptureListeners();
         showMessage(`Capture failed: ${err}`, 'error');
     }
+}
+
+function clearCaptureListeners() {
+    if (captureUnlisten)        { captureUnlisten();        captureUnlisten = null; }
+    if (captureStoppedUnlisten) { captureStoppedUnlisten(); captureStoppedUnlisten = null; }
 }
 
 async function stopCapture() {
@@ -1469,8 +1476,7 @@ async function stopCapture() {
         const { invoke } = window.__TAURI__.core;
         await invoke('stop_capture');
     } catch { /* ignore */ }
-    if (captureUnlisten)        { captureUnlisten();        captureUnlisten = null; }
-    if (captureStoppedUnlisten) { captureStoppedUnlisten(); captureStoppedUnlisten = null; }
+    clearCaptureListeners();
     captureRunning = false;
     updateCaptureUI();
 }
