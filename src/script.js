@@ -245,6 +245,7 @@ function parseLine(line, idx = 0) {
 }
 
 function buildFrame(id, timestamp, hex) {
+    if (hex.length % 2 !== 0) throw new Error('payload must contain complete bytes');
     const payload = [];
     for (let i = 0; i < hex.length; i += 2) payload.push(parseInt(hex.substr(i, 2), 16));
     return { id, timestamp, payload, dlc: payload.length };

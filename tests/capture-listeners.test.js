@@ -61,9 +61,21 @@ function loadApp(invoke) {
     return {
         callbacks,
         activeListeners: () => activeListeners,
+        parseLine: sandbox.parseLine,
         startCapture: sandbox.startCapture
     };
 }
+
+test('parser rejects payloads with an incomplete trailing byte', () => {
+    const app = loadApp(async () => {});
+
+    assert.throws(() => app.parseLine('123#ABC'), /complete bytes/);
+    const frame = app.parseLine('123#ABCD');
+    assert.equal(frame.id, '123');
+    assert.equal(frame.timestamp, 0);
+    assert.deepEqual(Array.from(frame.payload), [0xAB, 0xCD]);
+    assert.equal(frame.dlc, 2);
+});
 
 test('failed capture start removes both registered listeners', async () => {
     const app = loadApp(async () => { throw new Error('candump missing'); });
